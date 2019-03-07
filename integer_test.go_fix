@@ -1,0 +1,125 @@
+package cbor
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestEncodeUint(t *testing.T) {
+	tests := []struct {
+		name string
+		i    uint64
+		want []byte
+	}{
+		{"0", 0, []byte{0x00}},
+		{"<24", 16, []byte{0x10}},
+		{"Uint8", 128, []byte{24, 0x80}},
+		{"Uint16", 4660, []byte{25, 0x12, 0x34}},
+		{"Uint32", 305419896, []byte{26, 0x12, 0x34, 0x56, 0x78}},
+		{"Uint64", 1311768467463790320, []byte{27, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EncodeUint(tt.i); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("EncodeUint() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEncodeInt(t *testing.T) {
+	tests := []struct {
+		name string
+		i    int64
+		want []byte
+	}{
+		{"-1", -1, []byte{0x20}},
+		{">-25", -24, []byte{0x20 + 23}},
+		{"Int8", -129, []byte{0x20 + 24, 0x80}},
+		{"Int16", -32768, []byte{0x20 + 25, 0x7F, 0xFF}},
+		{"Int32", -2147483648, []byte{0x20 + 26, 0x7F, 0xFF, 0xFF, 0xFF}},
+		{"Int64", -9223372036854775808, []byte{0x20 + 27, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}},
+		{"Positive int", 1311768467463790320, []byte{27, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EncodeInt(tt.i); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("EncodeInt() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDecodeUint(t *testing.T) {
+	tests := []struct {
+		name    string
+		b       []byte
+		want    uint64
+		wantLen int
+		wantErr bool
+	}{
+		{"0", []byte{0x00}, 0, 1, false},
+		{"<24", []byte{0x10}, 16, 1, false},
+		{"Uint8", []byte{24, 0x80}, 128, 2, false},
+		{"Uint16", []byte{25, 0x12, 0x34}, 4660, 3, false},
+		{"Uint32", []byte{26, 0x12, 0x34, 0x56, 0x78}, 305419896, 5, false},
+		{"Uint64", []byte{27, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0}, 1311768467463790320, 9, false},
+		{"Uint8", []byte{24}, 0, 0, true},
+		{"Uint16", []byte{25, 0x12}, 0, 0, true},
+		{"Uint32", []byte{26, 0x12, 0x34, 0x56}, 0, 0, true},
+		{"Uint64", []byte{27, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE}, 0, 0, true},
+		{"Additional 28", []byte{28}, 0, 0, true},
+		{"Additional 29", []byte{29}, 0, 0, true},
+		{"Additional 30", []byte{30}, 0, 0, true},
+		{"Additional 31", []byte{31}, 0, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, n, err := DecodeUint(tt.b)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DecodeUint() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("DecodeUint() = %v, want %v", got, tt.want)
+			}
+			if n != tt.wantLen {
+				t.Errorf("DecodeUint() returned length of %d but %d was expected", n, tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestDecodeInt(t *testing.T) {
+	tests := []struct {
+		name    string
+		b       []byte
+		want    int64
+		wantLen int
+		wantErr bool
+	}{
+		{"-1", []byte{0x20}, -1, 1, false},
+		{">-25", []byte{0x20 + 23}, -24, 1, false},
+		{"Int8", []byte{0x20 + 24, 0x80}, -129, 2, false},
+		{"Int16", []byte{0x20 + 25, 0x7F, 0xFF}, -32768, 3, false},
+		{"Int32", []byte{0x20 + 26, 0x7F, 0xFF, 0xFF, 0xFF}, -2147483648, 5, false},
+		{"Int64", []byte{0x20 + 27, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, -9223372036854775808, 9, false},
+		{"Exceeds int64", []byte{27, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, 0, 0, true},
+		{"Value invalid length", []byte{27, 0xFF, 0xFF}, 0, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, n, err := DecodeInt(tt.b)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DecodeInt() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("DecodeInt() = %v, want %v", got, tt.want)
+			}
+			if n != tt.wantLen {
+				t.Errorf("DecodeUint() returned length of %d but %d was expected", n, tt.wantLen)
+			}
+		})
+	}
+}
